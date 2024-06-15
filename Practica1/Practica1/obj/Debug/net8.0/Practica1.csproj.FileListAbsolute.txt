@@ -274,3 +274,4 @@ C:\Users\isaac\OneDrive\CUATRIMESTRE 8\Tecnologias de internet 1\Practica1\Pract
 C:\Users\isaac\OneDrive\CUATRIMESTRE 8\Tecnologias de internet 1\Practica1\Practica1\Practica1\bin\Debug\net8.0\runtimes\win-x86\native\sni.dll
 C:\Users\isaac\OneDrive\CUATRIMESTRE 8\Tecnologias de internet 1\Practica1\Practica1\Practica1\bin\Debug\net8.0\runtimes\unix\lib\netcoreapp2.1\System.Data.SqlClient.dll
 C:\Users\isaac\OneDrive\CUATRIMESTRE 8\Tecnologias de internet 1\Practica1\Practica1\Practica1\bin\Debug\net8.0\runtimes\win\lib\netcoreapp2.1\System.Data.SqlClient.dll
+C:\Users\isaac\OneDrive\CUATRIMESTRE 8\Tecnologias de internet 1\Practica1\Practica1\Practica1\obj\Debug\net8.0\Practica1.sourcelink.json

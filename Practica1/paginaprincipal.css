@@ -1,0 +1,10 @@
+/* main.css */
+img {
+    display: block;
+    margin: 20px auto; /* Ajusta el valor según tus necesidades */
+    max-width: 100%; /* Asegura que las imágenes no se salgan del contenedor */
+}
+
+.center img {
+    margin-top: 20px; /* Ajusta este valor según tus necesidades */
+}

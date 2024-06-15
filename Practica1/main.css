@@ -71,3 +71,15 @@ nav {
 }
 
 
+/* main.css */
+.profile-image {
+  display: block;
+  margin: 20px auto; /* Ajusta el valor según tus necesidades */
+  max-width: 100%; /* Asegura que las imágenes no se salgan del contenedor */
+}
+
+.image-container {
+  text-align: center; /* Centra el contenido del div */
+  margin-top: 20px; /* Ajusta este valor según tus necesidades */
+}
+

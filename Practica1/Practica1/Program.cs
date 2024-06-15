@@ -1,11 +1,8 @@
-﻿using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Data;
-using System.Diagnostics;
 using System.IO;
-using System.Text;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
+using Microsoft.Data.SqlClient;
 
 class Program
 {
@@ -17,12 +14,11 @@ class Program
         string pathYoutubers = Path.Combine(directorio, "youtubers.html");
         string pathAnimes = Path.Combine(directorio, "animes.html");
         string pathFormularios = Path.Combine(directorio, "formularios.html");
-
         string connectionString = "Server=ISAC\\SQLEXPRESS;Database=Arbol genealogico;Integrated Security=True;TrustServerCertificate=True";
 
         // Generar contenido HTML de la página principal
         string queryDatosPersona = @"
-            SELECT DISTINCT g.Nombre AS NombreGenealogia, g.Imagenes AS ImagenesG, p.Nombre, p.Apellido, p.FechaNacimiento, p.Imagenes AS ImagenPersona 
+            SELECT g.Nombre AS NombreGenealogia, g.Imagenes AS ImagenesG, g.Parentesco, p.PersonaId, p.Nombre, p.Apellido, p.FechaNacimiento, p.Imagenes AS ImagenPersona 
             FROM Genealogia g 
             INNER JOIN Persona p ON g.PersonaId = p.PersonaId;";
 
@@ -31,7 +27,9 @@ class Program
             connection.Open();
             using (SqlCommand command = new SqlCommand(queryDatosPersona, connection))
             {
-                SqlDataReader reader = command.ExecuteReader();
+                SqlDataAdapter adapter = new SqlDataAdapter(command);
+                DataTable dataTable = new DataTable();
+                adapter.Fill(dataTable);
 
                 string contenidoHtml = @"
                 <!DOCTYPE html>
@@ -56,54 +54,76 @@ class Program
                     </header>
                     <div class=""center"">";
 
-                while (reader.Read())
+                HashSet<int> processedPersonIds = new HashSet<int>();
+
+                // Procesar las filas
+                foreach (DataRow row in dataTable.Rows)
                 {
-                    string nombrePersona = reader["Nombre"].ToString();
-                    string apellido = reader["Apellido"].ToString();
-                    DateTime fechaNacimiento = Convert.ToDateTime(reader["FechaNacimiento"]);
-                    string rutaImagenPersona = reader["ImagenPersona"].ToString();
-                    string rutaImagenG = reader["ImagenesG"].ToString();
-                    string nombreGenealogia = reader["NombreGenealogia"].ToString();
+                    int personaId = row["PersonaId"] != DBNull.Value ? Convert.ToInt32(row["PersonaId"]) : -1;
 
-                    // Añadir imagen de la persona
-                    if (!string.IsNullOrEmpty(rutaImagenPersona) && File.Exists(rutaImagenPersona))
+                    if (personaId != -1 && !processedPersonIds.Contains(personaId))
                     {
-                        byte[] bytesImagenPersona = File.ReadAllBytes(rutaImagenPersona);
-                        string base64ImagenPersona = Convert.ToBase64String(bytesImagenPersona);
+                        processedPersonIds.Add(personaId);
 
-                        contenidoHtml += $@"
-                        <div>
-                            <img src=""data:image/png;base64,{base64ImagenPersona}"" alt=""Imagen de {nombrePersona} {apellido}"">
+                        string nombrePersona = row["Nombre"].ToString();
+                        string apellido = row["Apellido"].ToString();
+                        DateTime fechaNacimiento = row["FechaNacimiento"] != DBNull.Value ? Convert.ToDateTime(row["FechaNacimiento"]) : DateTime.MinValue;
+                        string rutaImagenPersona = row["ImagenPersona"].ToString();
+
+                        // Añadir imagen de la persona asociada si existe
+                        if (!string.IsNullOrEmpty(rutaImagenPersona) && File.Exists(rutaImagenPersona))
+                        {
+                            byte[] bytesImagenPersona = File.ReadAllBytes(rutaImagenPersona);
+                            string base64ImagenPersona = Convert.ToBase64String(bytesImagenPersona);
+
+                            contenidoHtml += $@"
+                                        <div class=""image-container"">
+                                            <img class=""profile-image"" src=""data:image/png;base64,{base64ImagenPersona}"" alt=""Imagen de {nombrePersona} {apellido}"">
+                                            <div>
+                                                <b><p>{nombrePersona} {apellido}</p></b>
+                                                <b><p>Fecha de nacimiento: {fechaNacimiento.ToShortDateString()}</p></b>
+                                            </div>
+                                        </div>";
+
+                        }
+                        else
+                        {
+                            contenidoHtml += $@"
                             <div>
-                                <b><p>{nombrePersona} {apellido}</p></b>
-                                <b><p>Fecha de nacimiento: {fechaNacimiento.ToShortDateString()}</p></b>
-                            </div>
-                        </div>";
+                                <p>No hay imagen disponible para {nombrePersona} {apellido}</p>
+                                <div>
+                                    <b><p>{nombrePersona} {apellido}</p></b>
+                                </div>
+                            </div>";
+                        }
                     }
-                    else
-                    {
-                        contenidoHtml += $@"
-                        <div>
-                            <p>No hay imagen disponible para {nombrePersona} {apellido}</p>
-                            <div>
-                                <b><p>{nombrePersona} {apellido}</p></b>
-                            </div>
-                        </div>";
-                    }
+                }
 
-                    // Añadir imagen de genealogía
-                    if (!string.IsNullOrEmpty(rutaImagenG) && File.Exists(rutaImagenG))
-                    {
-                        byte[] bytesImagenG = File.ReadAllBytes(rutaImagenG);
-                        string base64ImagenG = Convert.ToBase64String(bytesImagenG);
+                // Añadir las imágenes de genealogía después de procesar las personas
+                foreach (DataRow row in dataTable.Rows)
+                {
+                    int personaId = row["PersonaId"] != DBNull.Value ? Convert.ToInt32(row["PersonaId"]) : -1;
 
-                        contenidoHtml += $@"
-                        <div>
-                            <img src=""data:image/png;base64,{base64ImagenG}"" alt=""Imagen de genealogía {nombreGenealogia}"">
+                    if (personaId != -1 && processedPersonIds.Contains(personaId))
+                    {
+                        string rutaImagenG = row["ImagenesG"].ToString();
+                        string nombreGenealogia = row["NombreGenealogia"].ToString();
+                        string parentesco = row["Parentesco"].ToString();
+
+                        // Añadir imagen de la genealogía si existe
+                        if (!string.IsNullOrEmpty(rutaImagenG) && File.Exists(rutaImagenG))
+                        {
+                            byte[] bytesImagenG = File.ReadAllBytes(rutaImagenG);
+                            string base64ImagenG = Convert.ToBase64String(bytesImagenG);
+
+                            contenidoHtml += $@"
                             <div>
-                                <b><p>Genealogía: {nombreGenealogia}</p></b>
-                            </div>
-                        </div>";
+                                <img src=""data:image/png;base64,{base64ImagenG}"" alt=""Imagen de genealogía {nombreGenealogia}"">
+                                <div>
+                                    <b><p style=""text-align: center;"">{parentesco}: {nombreGenealogia}</p></b>
+                                </div>
+                            </div>";
+                        }
                     }
                 }
 
@@ -113,11 +133,7 @@ class Program
                 </body>
                 </html>";
 
-                Directory.CreateDirectory(directorio);
                 File.WriteAllText(pathPaginaPrincipal, contenidoHtml);
-
-
-                reader.Close();
             }
         }
 
@@ -148,56 +164,82 @@ class Program
         </header>
         <div class=""center"">";
 
-            string queryAnimes = "SELECT NombreAnime, EnlaceTrailer FROM animes;";
+            string queryAnimes = "SELECT NombreAnime, EnlaceTrailer FROM Animes;";
             using (SqlCommand command = new SqlCommand(queryAnimes, connection))
             {
-                SqlDataReader reader = command.ExecuteReader();
-                while (reader.Read())
-                {
-                    string nombreAnime = reader["NombreAnime"].ToString();
-                    string enlaceTrailer = reader["EnlaceTrailer"].ToString();
+                SqlDataAdapter adapter = new SqlDataAdapter(command);
+                DataTable dataTable = new DataTable();
+                adapter.Fill(dataTable);
 
-                    // Verificar si el enlace es de YouTube
-                    if (!string.IsNullOrEmpty(enlaceTrailer) && enlaceTrailer.Contains("youtube.com"))
-                    {
-                        string embedLink = enlaceTrailer.Replace("watch?v=", "embed/");
-                        contenidoHtmlAnimes += $@"
-                <div class='video-container'>
-                    <b><p>{nombreAnime}</p></b>
-                    <iframe src=""{embedLink}"" frameborder=""0"" allowfullscreen></iframe>
-                </div>";
-                    }
+                foreach (DataRow row in dataTable.Rows)
+                {
+                    string nombre = row["NombreAnime"].ToString();
+                    string enlaceTrailer = row["EnlaceTrailer"].ToString();
+                    string videoId = GetYouTubeVideoId(enlaceTrailer); // Extraer el ID del video de YouTube
+
+                    contenidoHtmlAnimes += $@"
+                    <div>
+                        <h2>{nombre}</h2>
+                        <iframe width=""560"" height=""315"" src=""https://www.youtube.com/embed/{videoId}"" frameborder=""0"" allowfullscreen></iframe>
+                    </div>";
                 }
 
-                reader.Close();
+                contenidoHtmlAnimes += @"
+            </div>
+            <script src=""script.js""></script>
+        </body>
+        </html>";
+
+                File.WriteAllText(pathAnimes, contenidoHtmlAnimes);
             }
-
-            contenidoHtmlAnimes += @"
-        </div>
-        <script src=""script.js""></script>
-    </body>
-    </html>";
-
-            File.WriteAllText(pathAnimes, contenidoHtmlAnimes);
-
-            Console.WriteLine("Página de animes generada y abierta en el navegador.");
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = pathAnimes,
-                UseShellExecute = true
-            });
         }
+    
+
+    static string GetYouTubeVideoId(string url)
+    {
+        var uri = new Uri(url);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        return query["v"];
+    }
 
 
 
-        // Generar el contenido HTML de las otras páginas (Pasatiempos, Youtubers, Formularios)
-        string contenidoHtmlPasatiempos = @"
+
+// Generar el contenido HTML de las otras páginas (Pasatiempos, Youtubers, Formularios)
+string contenidoHtmlPasatiempos = @"
         <!DOCTYPE html>
         <html lang=""en"">
         <head>
             <meta charset=""UTF-8"">
             <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
             <title>Pasatiempos</title>
+            <link rel=""stylesheet"" href=""main.css"">
+        </head>
+        <body>
+            <header>
+                <nav>
+                    <ul class=""menu"">
+                        <li><a href=""PaginaPrincipal.html"" class=""menu-link"" data-page=""sobre-mi"">Sobre mi</a></li>
+                       
+<li><a href=""Pasatiempos.html"" class=""menu-link"" data-page=""pasatiempos"">Pasatiempos</a></li>
+                        <li><a href=""youtubers.html"" class=""menu-link"" data-page=""youtubers-favoritos"">Youtubers favoritos</a></li>
+                        <li><a href=""animes.html"" class=""menu-link"" data-page=""anime-series-favoritos"">Anime o series favoritos</a></li>
+                        <li><a href=""formularios.html"" class=""menu-link"" data-page=""formulario-contactos"">Formulario de contactos</a></li>
+                    </ul>
+                </nav>
+            </header>
+            <div class=""center""> Entre mis pasatiempos se encuentran dedicarme a la palabra de Dios, ir a la Iglesia, ver series de television o peliculas en netflix, jugar videojuegos, etc.</div>
+            <script src=""script.js""></script>
+        </body>
+        </html>";
+
+        string contenidoHtmlYoutubers = @"
+        <!DOCTYPE html>
+        <html lang=""en"">
+        <head>
+            <meta charset=""UTF-8"">
+            <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+            <title>Youtubers Favoritos</title>
             <link rel=""stylesheet"" href=""main.css"">
         </head>
         <body>
@@ -212,36 +254,10 @@ class Program
                     </ul>
                 </nav>
             </header>
-                <div class=""center""> Entre mis pasatiempos se encuentran dedicarme a la palabra de Dios, ir a la Iglesia, ver series de television o peliculas en netflix, jugar videojuegos, etc.</div>
-            <script src=""script.js""></script>
-        </body>
-        </html>";
+            <div class=""center"">
+                Entre mis youtubers favoritos se encuentran:<br><br>";
 
-        string contenidoHtmlYoutubers = @"
-<!DOCTYPE html>
-<html lang=""en"">
-<head>
-    <meta charset=""UTF-8"">
-    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Youtubers Favoritos</title>
-    <link rel=""stylesheet"" href=""main.css"">
-</head>
-<body>
-    <header>
-        <nav>
-            <ul class=""menu"">
-                <li><a href=""PaginaPrincipal.html"" class=""menu-link"" data-page=""sobre-mi"">Sobre mi</a></li>
-                <li><a href=""Pasatiempos.html"" class=""menu-link"" data-page=""pasatiempos"">Pasatiempos</a></li>
-                <li><a href=""youtubers.html"" class=""menu-link"" data-page=""youtubers-favoritos"">Youtubers favoritos</a></li>
-                <li><a href=""animes.html"" class=""menu-link"" data-page=""anime-series-favoritos"">Anime o series favoritos</a></li>
-                <li><a href=""formularios.html"" class=""menu-link"" data-page=""formulario-contactos"">Formulario de contactos</a></li>
-            </ul>
-        </nav>
-    </header>
-    <div class=""center"">
-        Entre mis youtubers favoritos se encuentran:<br><br>";
-
-        // Establece la conexión con la base de datos y ejecuta la consulta
+        // Consulta para obtener los datos de los Youtubers favoritos
         string queryYoutubers = "SELECT youtuber, enlace, rutaImagen FROM Youtubers";
 
         using (SqlConnection connection = new SqlConnection(connectionString))
@@ -251,7 +267,7 @@ class Program
                 connection.Open();
                 SqlDataReader reader = command.ExecuteReader();
 
-                // Recorre los resultados de la consulta y agrega cada youtuber, su enlace y su imagen al contenido HTML
+                // Leer los datos y construir el contenido HTML
                 while (reader.Read())
                 {
                     string youtuber = reader["youtuber"].ToString();
@@ -259,83 +275,92 @@ class Program
                     string rutaImagen = reader["rutaImagen"].ToString();
 
                     contenidoHtmlYoutubers += $@"
-            <div>
-                <img src=""{rutaImagen}"" alt=""Imagen del canal de YouTube de {youtuber}"">
-                <p><a href=""{enlace}"">{youtuber}</a></p>
-            </div>";
+                    <div>
+                        <img src=""{rutaImagen}"" alt=""Imagen del canal de YouTube de {youtuber}"">
+                        <p><a href=""{enlace}"">{youtuber}</a></p>
+                    </div>";
                 }
+
+                reader.Close();
             }
         }
 
         contenidoHtmlYoutubers += @"
-    </div>
-    <script src=""script.js""></script>
-</body>
-</html>";
+            </div>
+            <script src=""script.js""></script>
+        </body>
+        </html>";
 
-
-
-        string contenidoHtmlContactos = @"
-<!DOCTYPE html>
-<html lang=""en"">
-<head>
-    <meta charset=""UTF-8"">
-    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Contacto</title>
-    <link rel=""stylesheet"" href=""main.css"">
-</head>
-<body>
-    <header>
-        <nav>
-            <ul class=""menu"">
-                <li><a href=""PaginaPrincipal.html"" class=""menu-link"" data-page=""sobre-mi"">Sobre mi</a></li>
-                <li><a href=""Pasatiempos.html"" class=""menu-link"" data-page=""pasatiempos"">Pasatiempos</a></li>
-                <li><a href=""youtubers.html"" class=""menu-link"" data-page=""youtubers-favoritos"">Youtubers favoritos</a></li>
-                <li><a href=""animes.html"" class=""menu-link"" data-page=""anime-series-favoritos"">Anime o series favoritos</a></li>
-                <li><a href=""formularios.html"" class=""menu-link"" data-page=""formulario-contactos"">Formulario de contactos</a></li>
-            </ul>
-        </nav>
-    </header>
-    <div class=""center"">
-        <h2>Formulario de Contacto</h2>
-        <form action=""#"" method=""post"">
-            <label for=""nombre"">Nombre:</label><br>
-            <input type=""text"" id=""nombre"" name=""nombre"" required><br><br>
-            <label for=""email"">Correo Electrónico:</label><br>
-            <input type=""email"" id=""email"" name=""email"" required><br><br>
-            <label for=""mensaje"">Mensaje:</label><br>
-            <textarea id=""mensaje"" name=""mensaje"" rows=""4"" required></textarea><br><br>
-            <input type=""submit"" value=""Enviar"">
-        </form>
-
-        <h2>Sígueme en Redes Sociales</h2>
-        <div class=""social-media"">
-            <a href=""https://www.facebook.com/tuperfil"" target=""_blank"">
-                <img src=""imagenes/facebook.png"" alt=""Facebook"" style=""width: 50px; height: 50px;"">
-            </a>
-            <a href=""https://www.twitter.com/tuperfil"" target=""_blank"">
-                <img src=""imagenes/twitter.png"" alt=""Twitter"" style=""width: 50px; height: 50px;"">
-            </a>
-            <a href=""https://www.instagram.com/tuperfil"" target=""_blank"">
-                <img src=""imagenes/instagram.png"" alt=""Instagram"" style=""width: 50px; height: 50px;"">
-            </a>
-        </div>
-    </div>
-    <script src=""script.js""></script>
-</body>
-</html>";
-
-        // Escribir el contenido en el archivo HTML
-        File.WriteAllText(pathFormularios, contenidoHtmlContactos);
-
-        // Abrir el archivo HTML en el navegador web predeterminado
-
-
-        // Escribir el contenido en los archivos HTML correspondientes
-        File.WriteAllText(pathPasatiempos, contenidoHtmlPasatiempos);
         File.WriteAllText(pathYoutubers, contenidoHtmlYoutubers);
+
+        Console.WriteLine("Página de Youtubers favoritos generada y abierta en el navegador.");
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = pathYoutubers,
+            UseShellExecute = true
+        });
+
+        // Generar contenido HTML de la página de Pasatiempos
+        File.WriteAllText(pathPasatiempos, contenidoHtmlPasatiempos);
+
+        Console.WriteLine("Página de Pasatiempos generada.");
+
+        // Generar contenido HTML de la página de Formulario de Contacto
+        string contenidoHtmlContactos = @"
+        <!DOCTYPE html>
+        <html lang=""en"">
+        <head>
+            <meta charset=""UTF-8"">
+            <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+            <title>Contacto</title>
+            <link rel=""stylesheet"" href=""main.css"">
+        </head>
+        <body>
+            <header>
+                <nav>
+                    <ul class=""menu"">
+                        <li><a href=""PaginaPrincipal.html"" class=""menu-link"" data-page=""sobre-mi"">Sobre mi</a></li>
+                        <li><a href=""Pasatiempos.html"" class=""menu-link"" data-page=""pasatiempos"">Pasatiempos</a></li>
+                        <li><a href=""youtubers.html"" class=""menu-link"" data-page=""youtubers-favoritos"">Youtubers favoritos</a></li>
+                        <li><a href=""animes.html"" class=""menu-link"" data-page=""anime-series-favoritos"">Anime o series favoritos</a></li>
+                        <li><a href=""formularios.html"" class=""menu-link"" data-page=""formulario-contactos"">Formulario de contactos</a></li>
+                    </ul>
+                </nav>
+            </header>
+            <div class=""center"">
+                <h2>Formulario de Contacto</h2>
+                <form action=""#"" method=""post"">
+                    <label for=""nombre"">Nombre:</label><br>
+                    <input type=""text"" id=""nombre"" name=""nombre"" required><br><br>
+                    <label for=""email"">Correo Electrónico:</label><br>
+                    <input type=""email"" id=""email"" name=""email"" required><br><br>
+                    <label for=""mensaje"">Mensaje:</label><br>
+                    <textarea id=""mensaje"" name=""mensaje"" rows=""4"" required></textarea><br><br>
+                    <input type=""submit"" value=""Enviar"">
+                </form>
+
+                <h2>Sígueme en Redes Sociales</h2>
+                <div class=""social-media"">
+                    <a href=""https://www.facebook.com/tuperfil"" target=""_blank"">
+                        <img src=""imagenes/facebook.png"" alt=""Facebook"" style=""width: 50px; height: 50px;"">
+                    </a>
+                    <a href=""https://www.twitter.com/tuperfil"" target=""_blank"">
+                        <img src=""imagenes/twitter.png"" alt=""Twitter"" style=""width: 50px; height: 50px;"">
+                    </a>
+                    <a href=""https://www.instagram.com/tuperfil"" target=""_blank"">
+                        <img src=""imagenes/instagram.png"" alt=""Instagram"" style=""width: 50px; height: 50px;"">
+                    </a>
+                </div>
+            </div>
+            <script src=""script.js""></script>
+        </body>
+        </html>";
+
         File.WriteAllText(pathFormularios, contenidoHtmlContactos);
 
+        Console.WriteLine("Página de Formulario de Contacto generada y abierta en el navegador.");
+
+        // Mostrar mensaje final de finalización
         Console.WriteLine("Páginas adicionales generadas.");
     }
 }
